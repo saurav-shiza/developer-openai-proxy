@@ -8,19 +8,19 @@ app.use(express.json());
 
 const FLOWISE_CHATFLOW_URL = "https://developer.shiza.ai/api/v1/prediction/ab2cfad1-c3ab-4a7d-a9d9-6691f0172ff3";
 
-// Optional health check route
+// Health check route
 app.get('/', (req, res) => {
   res.send('✅ Flowise proxy is live');
 });
 
-// 🔵 Log all incoming requests
+// Global logger for all routes
 app.use((req, res, next) => {
   console.log(`🔵 ${req.method} request to ${req.originalUrl}`);
   next();
 });
 
 app.post('/v1/chat/completions', async (req, res) => {
-  // ✅ Require dummy API token to satisfy Play.ai
+  // Require Authorization header (Play.ai expects this)
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
@@ -43,14 +43,16 @@ app.post('/v1/chat/completions', async (req, res) => {
       question: userMessage
     });
 
-    console.log("💬 Flowise response:", flowiseResponse.data);
+    console.log("💬 Flowise raw response:", flowiseResponse.data);
 
     const reply =
+      flowiseResponse.data.text ||
       flowiseResponse.data.answer ||
       flowiseResponse.data.response ||
-      flowiseResponse.data.text ||
       JSON.stringify(flowiseResponse.data) ||
       "No response";
+
+    console.log("🟢 Final reply being sent to Play.ai:", reply);
 
     res.json({
       id: "chatcmpl-proxy",
@@ -79,7 +81,7 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-// ✅ Use only Render's assigned PORT
+// Use Render-assigned port
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
   console.log(`✅ Proxy server running on port ${PORT}`);
