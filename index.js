@@ -13,14 +13,13 @@ app.get('/', (req, res) => {
   res.send('✅ Flowise proxy is live');
 });
 
-// Global logger for all routes
+// Log all incoming requests
 app.use((req, res, next) => {
   console.log(`🔵 ${req.method} request to ${req.originalUrl}`);
   next();
 });
 
 app.post('/v1/chat/completions', async (req, res) => {
-  // Require Authorization header (Play.ai expects this)
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
@@ -29,47 +28,87 @@ app.post('/v1/chat/completions', async (req, res) => {
     return res.status(401).json({ error: 'Missing API token' });
   }
 
-  console.log("✅ API token received:", token);
+  const { model = "gpt-4-proxy", messages = [], stream = false } = req.body;
+
+  const lastUserMessage = messages
+    .filter(msg => msg.role === 'user')
+    .slice(-1)[0]?.content || "Hello?";
+
+  console.log("📨 Last user message:", lastUserMessage);
 
   try {
-    const messages = req.body.messages || [];
-    const userMessage = messages.length
-      ? messages[messages.length - 1].content
-      : req.body.question || "Hello?";
-
-    console.log("📨 Incoming message:", userMessage);
-
     const flowiseResponse = await axios.post(FLOWISE_CHATFLOW_URL, {
-      question: userMessage
+      question: lastUserMessage
     });
 
-    console.log("💬 Flowise raw response:", flowiseResponse.data);
+    const rawReply = flowiseResponse.data.text || flowiseResponse.data.answer || "No response";
+    const reply = String(rawReply).trim();
 
-    const reply =
-      flowiseResponse.data.text ||
-      flowiseResponse.data.answer ||
-      flowiseResponse.data.response ||
-      JSON.stringify(flowiseResponse.data) ||
-      "No response";
+    console.log("💬 Flowise response:", reply);
 
-    console.log("🟢 Final reply being sent to Play.ai:", reply);
+    if (stream) {
+      // Streaming (SSE) format
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
 
-    res.json({
-      id: "chatcmpl-proxy",
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: "gpt-4-proxy",
-      choices: [
-        {
-          index: 0,
-          message: {
-            role: "assistant",
-            content: reply
-          },
-          finish_reason: "stop"
-        }
-      ]
-    });
+      const words = reply.split(' ');
+      for (const word of words) {
+        res.write(`data: ${JSON.stringify({
+          id: "chatcmpl-stream",
+          object: "chat.completion.chunk",
+          created: Math.floor(Date.now() / 1000),
+          model,
+          choices: [
+            {
+              index: 0,
+              delta: { content: word + " " },
+              finish_reason: null
+            }
+          ]
+        })}\n\n`);
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      // Final finish chunk
+      res.write(`data: ${JSON.stringify({
+        id: "chatcmpl-stream",
+        object: "chat.completion.chunk",
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: "stop"
+          }
+        ]
+      })}\n\n`);
+
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } else {
+      // Non-streaming standard response
+      res.setHeader("Content-Type", "application/json");
+      res.status(200).json({
+        id: "chatcmpl-proxy",
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: reply
+            },
+            finish_reason: "stop"
+          }
+        ]
+      });
+    }
+
+    console.log("✅ Response sent to client");
   } catch (err) {
     console.error("❌ Proxy error:", err.message);
     res.status(500).json({
@@ -81,8 +120,7 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-// Use Render-assigned port
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Proxy server running on port ${PORT}`);
+  console.log(`🚀 Proxy server running on port ${PORT}`);
 });
