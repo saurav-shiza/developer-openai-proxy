@@ -13,7 +13,7 @@ app.get('/', (req, res) => {
   res.send('✅ Flowise proxy is live');
 });
 
-// Log all incoming requests
+// Log all requests
 app.use((req, res, next) => {
   console.log(`🔵 ${req.method} request to ${req.originalUrl}`);
   next();
@@ -30,11 +30,13 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   const { model = "gpt-4-proxy", messages = [], stream = false } = req.body;
 
-  const lastUserMessage = messages
-    .filter(msg => msg.role === 'user')
-    .slice(-1)[0]?.content || "Hello?";
+  // ✅ Extract last user message safely
+  const userMessages = messages.filter(msg => msg.role === 'user');
+  const lastUserMessage = userMessages.length > 0 && userMessages[userMessages.length - 1].content?.trim()
+    ? userMessages[userMessages.length - 1].content.trim()
+    : "Hello?";
 
-  console.log("📨 Last user message:", lastUserMessage);
+  console.log("📨 Final user message:", lastUserMessage);
 
   try {
     const flowiseResponse = await axios.post(FLOWISE_CHATFLOW_URL, {
@@ -47,7 +49,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     console.log("💬 Flowise response:", reply);
 
     if (stream) {
-      // Streaming (SSE) format
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
@@ -70,7 +71,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         await new Promise(r => setTimeout(r, 50));
       }
 
-      // Final finish chunk
+      // Send final chunk
       res.write(`data: ${JSON.stringify({
         id: "chatcmpl-stream",
         object: "chat.completion.chunk",
@@ -88,7 +89,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       res.write("data: [DONE]\n\n");
       res.end();
     } else {
-      // Non-streaming standard response
       res.setHeader("Content-Type", "application/json");
       res.status(200).json({
         id: "chatcmpl-proxy",
@@ -108,7 +108,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       });
     }
 
-    console.log("✅ Response sent to client");
+    console.log("✅ Response sent");
   } catch (err) {
     console.error("❌ Proxy error:", err.message);
     res.status(500).json({
