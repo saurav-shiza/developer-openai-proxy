@@ -28,13 +28,24 @@ app.post('/v1/chat/completions', async (req, res) => {
     return res.status(401).json({ error: 'Missing API token' });
   }
 
-  const { model = "gpt-4-proxy", messages = [], stream = false } = req.body;
+  const { model = "gpt-4-proxy", messages = [], prompt = "", stream = false } = req.body;
 
-  // ✅ Extract last user message safely
-  const userMessages = messages.filter(msg => msg.role === 'user');
-  const lastUserMessage = userMessages.length > 0 && userMessages[userMessages.length - 1].content?.trim()
-    ? userMessages[userMessages.length - 1].content.trim()
-    : "Hello?";
+  // 🧠 Determine the user message source
+  let lastUserMessage = "";
+
+  if (Array.isArray(messages) && messages.length > 0) {
+    const userMessages = messages.filter(msg => msg.role === 'user');
+    lastUserMessage = userMessages[userMessages.length - 1]?.content?.trim() || "";
+  }
+
+  if (!lastUserMessage && typeof prompt === 'string' && prompt.trim().length > 0) {
+    lastUserMessage = prompt.trim();
+  }
+
+  if (!lastUserMessage) {
+    console.log("⚠️ No valid user message or prompt found, defaulting to fallback.");
+    lastUserMessage = "Hello?";
+  }
 
   console.log("📨 Final user message:", lastUserMessage);
 
@@ -71,7 +82,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         await new Promise(r => setTimeout(r, 50));
       }
 
-      // Send final chunk
       res.write(`data: ${JSON.stringify({
         id: "chatcmpl-stream",
         object: "chat.completion.chunk",
