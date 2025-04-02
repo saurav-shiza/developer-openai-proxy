@@ -8,21 +8,28 @@ app.use(express.json());
 
 const FLOWISE_CHATFLOW_URL = "https://developer.shiza.ai/api/v1/prediction/ab2cfad1-c3ab-4a7d-a9d9-6691f0172ff3";
 
+// Health check route (optional)
+app.get('/', (req, res) => {
+  res.send('✅ Flowise proxy is running');
+});
+
 app.post('/v1/chat/completions', async (req, res) => {
   try {
-    // Allow both OpenAI-style and direct question input
+    // 🔥 Log full incoming request
+    console.log("🔥 FULL ElevenLabs request:", JSON.stringify(req.body, null, 2));
+
     const messages = req.body.messages || [];
     const userMessage = messages.length
       ? messages[messages.length - 1].content
       : req.body.question || "Hello?";
 
-    console.log("Incoming message:", userMessage);
+    console.log("📨 Incoming message:", userMessage);
 
     const flowiseResponse = await axios.post(FLOWISE_CHATFLOW_URL, {
       question: userMessage
     });
 
-    console.log("Flowise response:", flowiseResponse.data);
+    console.log("💬 Flowise response:", flowiseResponse.data);
 
     const reply =
       flowiseResponse.data.answer ||
@@ -48,7 +55,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       ]
     });
   } catch (err) {
-    console.error("Proxy error:", err.message);
+    console.error("❌ Proxy error:", err.message);
     res.status(500).json({
       error: {
         message: "Proxy error",
@@ -58,5 +65,8 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Proxy server running on port ${PORT}`));
+// ✅ Use Render-assigned port only
+const PORT = process.env.PORT;
+app.listen(PORT, () => {
+  console.log(`✅ Proxy server running on port ${PORT}`);
+});
