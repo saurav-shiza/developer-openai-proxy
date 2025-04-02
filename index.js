@@ -8,16 +8,30 @@ app.use(express.json());
 
 const FLOWISE_CHATFLOW_URL = "https://developer.shiza.ai/api/v1/prediction/ab2cfad1-c3ab-4a7d-a9d9-6691f0172ff3";
 
-// Health check route (optional)
+// Optional health check route
 app.get('/', (req, res) => {
-  res.send('✅ Flowise proxy is running');
+  res.send('✅ Flowise proxy is live');
+});
+
+// 🔵 Log all incoming requests
+app.use((req, res, next) => {
+  console.log(`🔵 ${req.method} request to ${req.originalUrl}`);
+  next();
 });
 
 app.post('/v1/chat/completions', async (req, res) => {
-  try {
-    // 🔥 Log full incoming request
-    console.log("🔥 FULL ElevenLabs request:", JSON.stringify(req.body, null, 2));
+  // ✅ Require dummy API token to satisfy Play.ai
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
+  if (!token) {
+    console.log("❌ Missing Authorization header");
+    return res.status(401).json({ error: 'Missing API token' });
+  }
+
+  console.log("✅ API token received:", token);
+
+  try {
     const messages = req.body.messages || [];
     const userMessage = messages.length
       ? messages[messages.length - 1].content
@@ -65,7 +79,7 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-// ✅ Use Render-assigned port only
+// ✅ Use only Render's assigned PORT
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
   console.log(`✅ Proxy server running on port ${PORT}`);
