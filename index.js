@@ -4,86 +4,81 @@ import fetch from 'node-fetch';
 const app = express();
 app.use(express.json());
 
-// Example route that mimics OpenAI's Chat Completions endpoint
 app.post('/v1/chat/completions', async (req, res) => {
   try {
-    const { model, messages } = req.body;
+    // Typically: { model, messages, stream } for an OpenAI-style request
+    const { model, messages } = req.body || {};
 
-    // Validate 'messages' array
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'No "messages" array provided.' });
+    // Find the user's last message if it exists
+    let userMessage = '';
+    if (Array.isArray(messages)) {
+      const userMsgObj = messages.filter(m => m.role === 'user').pop();
+      if (userMsgObj?.content) {
+        userMessage = userMsgObj.content.trim();
+      }
     }
 
-    // Find the user's most recent message
-    const userMessageObj = messages.filter(m => m.role === 'user').pop();
-    if (!userMessageObj) {
-      return res.status(400).json({ error: 'No user message found in "messages".' });
-    }
-    const userMessage = userMessageObj.content;
-
-    // Make the request to your SHIZA Developer endpoint
-    // Replace this with your actual SHIZA endpoint if needed
-    const shizaEndpoint = 'https://developer.shiza.ai/api/v1/prediction/ab2cfad1-c3ab-4a7d-a9d9-6691f0172ff3';
-    const shizaResp = await fetch(shizaEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: userMessage }),
-    });
-
-    // Suppose SHIZA returns something like:
-    // {
-    //   "text": "The smoke test has passed.",
-    //   "question": "Hello from Postman!",
-    //   "chatId": "...",
-    //   ...
-    // }
-    const shizaData = await shizaResp.json();
-
-    // If shizaData has a 'text' field, use that. Otherwise:
-    // - if it's a string, return that
-    // - else fallback to JSON-stringifying the entire object
-    let finalContent;
-    if (typeof shizaData === 'object' && shizaData.text) {
-      finalContent = shizaData.text;
-    } else if (typeof shizaData === 'string') {
-      finalContent = shizaData;
-    } else {
-      finalContent = JSON.stringify(shizaData);
+    // If there's no user message or it's empty, set a default
+    if (!userMessage) {
+      userMessage = 'Hello from a default prompt!';
     }
 
-    // Build an OpenAI-style Chat Completion response
-    const completionResponse = {
+    // ---- Call your SHIZA Developer endpoint with the userMessage ----
+    const response = await fetch(
+      'https://developer.shiza.ai/api/v1/prediction/ab2cfad1-c3ab-4a7d-a9d9-6691f0172ff3',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: userMessage })
+      }
+    );
+    const shizaData = await response.json();
+
+    // Suppose SHIZA returns something like { text: "some answer", ... } or
+    // { answer: "some answer", question: "..." }
+    // We'll pick whichever field you want for the final "assistant" content.
+
+    const assistantText = shizaData.text
+      || shizaData.answer
+      || "No 'answer' or 'text' field returned by SHIZA.";
+
+    // Build an OpenAI Chat Completions JSON response
+    const chatCompletion = {
       id: 'chatcmpl-' + Math.random().toString(36).slice(2),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
-      model: model || 'shiza-custom-model',
+      model: model || 'shiza-proxy-model',
       choices: [
         {
           index: 0,
           message: {
             role: 'assistant',
-            content: finalContent,
+            // Return the plain text so it doesn't show up as escaped JSON
+            content: assistantText
           },
-          finish_reason: 'stop',
-        },
+          finish_reason: 'stop'
+        }
       ],
       usage: {
         prompt_tokens: 0,
         completion_tokens: 0,
-        total_tokens: 0,
-      },
+        total_tokens: 0
+      }
     };
 
-    // Return the JSON response
-    return res.json(completionResponse);
+    return res.json(chatCompletion);
+
   } catch (error) {
-    console.error('Error in chat completions proxy:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error(error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      details: error.message || error
+    });
   }
 });
 
-// Start listening
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('SHIZA-OpenAI Proxy running on port ' + PORT);
+  console.log(`OpenAI-style proxy listening on port ${PORT}`);
 });
