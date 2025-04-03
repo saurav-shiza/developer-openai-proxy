@@ -1,7 +1,14 @@
+# render.yaml
 services:
-  - type: web
-    name: developer-openai-proxy
+  - name: shiza-will-smith-proxy
+    type: web
     env: node
-    plan: free
-    buildCommand: npm install
-    startCommand: npm start
+    branch: main
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    # (Optional) Set plan, region, environment variables, etc.
+    plan: free        # e.g. use "free", "starter", "standard", ...
+    # region: oregon
+    envVars:
+      - key: PORT
+        value: "3000"
