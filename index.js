@@ -6,10 +6,9 @@ app.use(express.json());
 
 app.post('/v1/chat/completions', async (req, res) => {
   try {
-    // Typically: { model, messages, stream } for an OpenAI-style request
     const { model, messages } = req.body || {};
 
-    // Find the user's last message if it exists
+    // 1. Extract user prompt
     let userMessage = '';
     if (Array.isArray(messages)) {
       const userMsgObj = messages.filter(m => m.role === 'user').pop();
@@ -17,13 +16,11 @@ app.post('/v1/chat/completions', async (req, res) => {
         userMessage = userMsgObj.content.trim();
       }
     }
-
-    // If there's no user message or it's empty, set a default
     if (!userMessage) {
       userMessage = 'Hello from a default prompt!';
     }
 
-    // ---- Call your SHIZA Developer endpoint with the userMessage ----
+    // 2. Call the SHIZA Developer endpoint with { question: userMessage }
     const response = await fetch(
       'https://developer.shiza.ai/api/v1/prediction/ab2cfad1-c3ab-4a7d-a9d9-6691f0172ff3',
       {
@@ -34,16 +31,16 @@ app.post('/v1/chat/completions', async (req, res) => {
     );
     const shizaData = await response.json();
 
-    // Suppose SHIZA returns something like { text: "some answer", ... } or
-    // { answer: "some answer", question: "..." }
-    // We'll pick whichever field you want for the final "assistant" content.
+    // 3. Parse out the final bot message from the "messages" array
+    let assistantText = "No bot messages found.";
+    if (Array.isArray(shizaData.messages)) {
+      const botMsgObj = shizaData.messages.filter(m => m.role === 'bot').pop();
+      if (botMsgObj && botMsgObj.content) {
+        assistantText = botMsgObj.content;
+      }
+    }
 
-    const assistantText = shizaData.response 
-      || shizaData.text
-      || shizaData.answer
-      || "No 'answer' or 'text' field returned by SHIZA.";
-
-    // Build an OpenAI Chat Completions JSON response
+    // 4. Return an OpenAI Chat Completions–style response
     const chatCompletion = {
       id: 'chatcmpl-' + Math.random().toString(36).slice(2),
       object: 'chat.completion',
@@ -54,7 +51,6 @@ app.post('/v1/chat/completions', async (req, res) => {
           index: 0,
           message: {
             role: 'assistant',
-            // Return the plain text so it doesn't show up as escaped JSON
             content: assistantText
           },
           finish_reason: 'stop'
@@ -78,7 +74,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`OpenAI-style proxy listening on port ${PORT}`);
