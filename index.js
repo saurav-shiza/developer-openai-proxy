@@ -38,7 +38,8 @@ app.post('/v1/chat/completions', async (req, res) => {
     // { answer: "some answer", question: "..." }
     // We'll pick whichever field you want for the final "assistant" content.
 
-    const assistantText = shizaData.text
+    const assistantText = shizaData.response 
+      || shizaData.text
       || shizaData.answer
       || "No 'answer' or 'text' field returned by SHIZA.";
 
