@@ -30,27 +30,45 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     );
 
-    // 3) The returned data is an array of conversation objects.
+    // 3) The returned data is an array of conversation objects
     const shizaData = await shizaResponse.json();
-    // Example shape: [ { id, source, messages: [ {role, content}, ... ] }, ... ]
+    // shape: [
+    //   {
+    //     "id": "some-uuid",
+    //     "messages": [
+    //       { "role": "user", "content": "..." },
+    //       { "role": "bot",  "content": "..." }
+    //     ]
+    //   },
+    //   ...
+    // ]
 
     let assistantText = '';
 
-    // If we got an array, pick the last conversation,
-    // then pick the last 'bot' message in that conversation.
-    if (Array.isArray(shizaData) && shizaData.length > 0) {
-      const lastConversation = shizaData[shizaData.length - 1];
-      if (lastConversation && Array.isArray(lastConversation.messages)) {
-        const botMsgObj = lastConversation.messages.filter(m => m.role === 'bot').pop();
-        if (botMsgObj && botMsgObj.content) {
-          assistantText = botMsgObj.content;
-        }
+    // Step A: Filter for conversations that contain userMessage
+    // in a "user" role. Some conversations may have the same question,
+    // so we filter them all, then pick the last match.
+    const matchingConversations = shizaData.filter(conv => {
+      if (!conv.messages) return false;
+      // Check if *any* user message matches "userMessage" exactly
+      return conv.messages.some(
+        m => m.role === 'user' && m.content.trim() === userMessage
+      );
+    });
+
+    // Step B: Pick the last matching conversation
+    if (matchingConversations.length > 0) {
+      const lastMatch = matchingConversations[matchingConversations.length - 1];
+      // Step C: In that conversation, pick the last 'bot' message
+      const botMsgObj = lastMatch.messages.filter(m => m.role === 'bot').pop();
+      if (botMsgObj && botMsgObj.content) {
+        assistantText = botMsgObj.content;
       }
     }
 
-    // If we still didn't find any text, let's set a fallback message:
+    // Fallback if nothing matched
     if (!assistantText) {
-      assistantText = "No bot messages found in the last conversation.";
+      assistantText = "No bot messages found matching this user prompt.";
     }
 
     // 4) Return an OpenAI chat completions–style response
